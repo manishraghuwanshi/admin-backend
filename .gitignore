@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Neon CLI local link metadata (machine-specific, contains no secret)
+.neon
