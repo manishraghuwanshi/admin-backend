@@ -1,0 +1,47 @@
+import express, { type Express } from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+
+import { buildCorsOptions } from "./config/cors.js";
+import { env } from "./config/env.js";
+import { errorHandler } from "./middleware/error-handler.js";
+import { notFoundHandler } from "./middleware/not-found.js";
+import { requestLogger } from "./middleware/request-logger.js";
+import { securityHeaders } from "./middleware/security-headers.js";
+
+/**
+ * Builds the Express application.
+ *
+ * Middleware order matters: security headers and logging wrap everything,
+ * CORS runs before body parsing (so preflights short-circuit cheaply), and the
+ * 404/error handlers are registered last.
+ */
+export function createApp(): Express {
+  const app = express();
+
+  app.disable("x-powered-by");
+
+  // Express default is `false`. Enable TRUST_PROXY when running behind a
+  // proxy/load balancer so `req.ip` and `req.protocol` are accurate.
+  app.set("trust proxy", env.TRUST_PROXY);
+
+  app.use(securityHeaders);
+  app.use(requestLogger);
+  app.use(cors(buildCorsOptions()));
+  app.use(cookieParser());
+  app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
+
+  // Liveness: no I/O, so a database outage cannot make an orchestrator restart a
+  // process that would come back equally unable to serve.
+  app.get("/health", (_req, res) => {
+    res.json({
+      success: true,
+      message: "Admin backend is running",
+    });
+  });
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  return app;
+}
