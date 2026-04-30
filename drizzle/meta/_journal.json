@@ -8,6 +8,13 @@
       "when": 1789931516820,
       "tag": "0000_cooing_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789933364641,
+      "tag": "0001_chilly_steve_rogers",
+      "breakpoints": true
     }
   ]
 }
