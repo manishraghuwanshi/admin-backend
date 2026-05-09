@@ -8,3 +8,11 @@ export function sendSuccess<T>(res: Response, data: T, status = 200): void {
     data,
   });
 }
+
+export function sendPaginated<T>(res: Response, data: T[], pagination: PaginationMeta): void {
+  res.status(200).json({
+    success: true,
+    data,
+    pagination,
+  });
+}
