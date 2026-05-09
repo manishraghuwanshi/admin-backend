@@ -4,10 +4,12 @@ import cookieParser from "cookie-parser";
 
 import { buildCorsOptions } from "./config/cors.js";
 import { env } from "./config/env.js";
+import { csrfOriginCheck } from "./middleware/csrf.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { securityHeaders } from "./middleware/security-headers.js";
+import authRouter from "./modules/auth/auth.routes.js";
 
 /**
  * Builds the Express application.
@@ -39,6 +41,12 @@ export function createApp(): Express {
       message: "Admin backend is running",
     });
   });
+
+  // Cookie-authenticated endpoints: every state-changing request must carry a
+  // same-site Origin (see `csrfOriginCheck`).
+  app.use("/api", csrfOriginCheck);
+
+  app.use("/api/auth", authRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
