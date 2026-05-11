@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   numeric,
+  pgEnum,
   pgTable,
   primaryKey,
   text,
@@ -433,6 +434,134 @@ export const inventory = pgTable(
   ],
 );
 
+export const adminRoleEnum = pgEnum("admin_role", ["owner", "manager", "editor"]);
+
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    email: varchar("email", {
+      length: 255,
+    })
+      .notNull()
+      .unique(),
+
+    passwordHash: text("password_hash").notNull(),
+
+    name: varchar("name", {
+      length: 120,
+    }).notNull(),
+
+    role: adminRoleEnum("role").notNull(),
+
+    isActive: boolean("is_active").notNull().default(true),
+
+    lastLoginAt: timestamp("last_login_at", {
+      withTimezone: true,
+    }),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("admin_users_role_idx").on(table.role),
+    index("admin_users_is_active_idx").on(table.isActive),
+  ],
+);
+
+export const refreshSessions = pgTable(
+  "refresh_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    adminUserId: uuid("admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+
+    tokenHash: text("token_hash").notNull(),
+
+    expiresAt: timestamp("expires_at", {
+      withTimezone: true,
+    }).notNull(),
+
+    revokedAt: timestamp("revoked_at", {
+      withTimezone: true,
+    }),
+
+    ipAddress: varchar("ip_address", {
+      length: 64,
+    }),
+
+    userAgent: text("user_agent"),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("refresh_sessions_token_hash_idx").on(table.tokenHash),
+    index("refresh_sessions_admin_user_id_idx").on(table.adminUserId),
+    index("refresh_sessions_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    actorId: uuid("actor_id").references(() => adminUsers.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+
+    action: varchar("action", {
+      length: 80,
+    }).notNull(),
+
+    entityType: varchar("entity_type", {
+      length: 80,
+    }).notNull(),
+
+    entityId: uuid("entity_id"),
+
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+
+    ipAddress: varchar("ip_address", {
+      length: 64,
+    }),
+
+    userAgent: text("user_agent"),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("audit_logs_actor_id_idx").on(table.actorId),
+    index("audit_logs_entity_idx").on(table.entityType, table.entityId),
+    index("audit_logs_created_at_idx").on(table.createdAt),
+    index("audit_logs_action_idx").on(table.action),
+  ],
+);
+
 export const brandsRelations = relations(brands, ({ many }) => ({
   products: many(products),
 }));
@@ -490,3 +619,23 @@ export const inventoryRelations = relations(inventory, ({ one }) => ({
   }),
 }));
 
+export const adminUsersRelations = relations(adminUsers, ({ many }) => ({
+  refreshSessions: many(refreshSessions),
+  auditLogs: many(auditLogs),
+}));
+
+export const refreshSessionsRelations = relations(refreshSessions, ({ one }) => ({
+  adminUser: one(adminUsers, {
+    fields: [refreshSessions.adminUserId],
+    references: [adminUsers.id],
+  }),
+}));
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  actor: one(adminUsers, {
+    fields: [auditLogs.actorId],
+    references: [adminUsers.id],
+  }),
+}));
+
+export type AdminRole = (typeof adminRoleEnum.enumValues)[number];
