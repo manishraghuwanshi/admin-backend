@@ -10,6 +10,7 @@ import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import authRouter from "./modules/auth/auth.routes.js";
+import brandsRouter from "./modules/brands/brands.routes.js";
 
 /**
  * Builds the Express application.
@@ -47,6 +48,7 @@ export function createApp(): Express {
   app.use("/api", csrfOriginCheck);
 
   app.use("/api/auth", authRouter);
+  app.use("/api/brands", brandsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
