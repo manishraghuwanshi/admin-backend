@@ -172,6 +172,27 @@ function bodySizeLimit(name: string, fallback: string): string {
   return raw.toLowerCase();
 }
 
+function secret(name: string, required: boolean, minLength: number): string | undefined {
+  const raw = optionalString(name);
+
+  if (!raw) {
+    if (required) {
+      problems.push(`${name}: required but not set`);
+    }
+
+    return undefined;
+  }
+
+  if (raw.length < minLength) {
+    problems.push(`${name}: must be at least ${minLength} characters`);
+  }
+
+  return raw;
+}
+
+const COOKIE_SAMESITE_VALUES = ["lax", "strict", "none"] as const;
+type CookieSameSite = (typeof COOKIE_SAMESITE_VALUES)[number];
+
 const NODE_ENV = enumValue("NODE_ENV", NODE_ENVIRONMENTS, "development") ?? "development";
 const IS_PRODUCTION = NODE_ENV === "production";
 const IS_TEST = NODE_ENV === "test";
@@ -184,10 +205,29 @@ const DATABASE_URL_UNPOOLED = postgresUrl("DATABASE_URL_UNPOOLED", false);
 const TRUST_PROXY = trustProxy("TRUST_PROXY");
 const JSON_BODY_LIMIT = bodySizeLimit("JSON_BODY_LIMIT", "100kb");
 const SHUTDOWN_TIMEOUT_MS = integer("SHUTDOWN_TIMEOUT_MS", 10000, 1000, 60000);
+const AUTH_ACCESS_TOKEN_TTL_SECONDS = integer("AUTH_ACCESS_TOKEN_TTL_SECONDS", 900, 60, 3600);
+const AUTH_REFRESH_TOKEN_TTL_SECONDS = integer(
+  "AUTH_REFRESH_TOKEN_TTL_SECONDS",
+  60 * 60 * 24 * 7,
+  3600,
+  60 * 60 * 24 * 30,
+);
+const AUTH_COOKIE_SAMESITE =
+  enumValue("AUTH_COOKIE_SAMESITE", COOKIE_SAMESITE_VALUES, IS_PRODUCTION ? "none" : "lax") ??
+  "lax";
+// Signing secrets are mandatory in every environment. There is deliberately no
+// built-in fallback: a known static JWT secret would let anyone forge admin
+// tokens. Tests supply their own deterministic secrets in `src/tests/setup.ts`.
+const AUTH_ACCESS_TOKEN_SECRET = secret("AUTH_ACCESS_TOKEN_SECRET", true, 32);
+const AUTH_REFRESH_TOKEN_SECRET = secret("AUTH_REFRESH_TOKEN_SECRET", true, 32);
 
 if (IS_PRODUCTION && CORS_ORIGINS.length === 0) {
   problems.push("CORS_ORIGINS: required in production (comma-separated list of allowed origins)");
 }
+
+// `AUTH_COOKIE_SAMESITE=none` is only meaningful over HTTPS. Rather than
+// rejecting the combination here, `src/lib/auth/cookies.js` forces `Secure`
+// whenever SameSite is `none`, so an unsafe cookie can never be issued.
 
 if (problems.length > 0) {
   throw new Error(
@@ -209,6 +249,15 @@ export const env = Object.freeze({
   JSON_BODY_LIMIT,
   LOG_LEVEL,
   SHUTDOWN_TIMEOUT_MS,
+  AUTH_ACCESS_TOKEN_SECRET: AUTH_ACCESS_TOKEN_SECRET as string,
+  AUTH_REFRESH_TOKEN_SECRET: AUTH_REFRESH_TOKEN_SECRET as string,
+  AUTH_ACCESS_TOKEN_TTL_SECONDS,
+  AUTH_REFRESH_TOKEN_TTL_SECONDS,
+  AUTH_COOKIE_SAMESITE: AUTH_COOKIE_SAMESITE as CookieSameSite,
+  AUTH_COOKIE_NAME_ACCESS: optionalString("AUTH_COOKIE_NAME_ACCESS") ?? "admin_access_token",
+  AUTH_COOKIE_NAME_REFRESH: optionalString("AUTH_COOKIE_NAME_REFRESH") ?? "admin_refresh_token",
+  /** Refresh sessions older than this are removed by the cleanup job. */
+  SESSION_RETENTION_DAYS: integer("SESSION_RETENTION_DAYS", 30, 1, 365),
 });
 
 export type Env = typeof env;
