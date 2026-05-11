@@ -11,6 +11,7 @@ import { requestLogger } from "./middleware/request-logger.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import authRouter from "./modules/auth/auth.routes.js";
 import brandsRouter from "./modules/brands/brands.routes.js";
+import categoriesRouter from "./modules/categories/categories.routes.js";
 
 /**
  * Builds the Express application.
@@ -49,6 +50,7 @@ export function createApp(): Express {
 
   app.use("/api/auth", authRouter);
   app.use("/api/brands", brandsRouter);
+  app.use("/api/categories", categoriesRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
