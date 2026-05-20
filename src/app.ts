@@ -10,6 +10,8 @@ import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import authRouter from "./modules/auth/auth.routes.js";
+import auditLogsRouter from "./modules/audit-logs/audit-logs.routes.js";
+import adminUsersRouter from "./modules/admin-users/admin-users.routes.js";
 import brandsRouter from "./modules/brands/brands.routes.js";
 import categoriesRouter from "./modules/categories/categories.routes.js";
 import inventoryRouter from "./modules/inventory/inventory.routes.js";
@@ -51,6 +53,8 @@ export function createApp(): Express {
   app.use("/api", csrfOriginCheck);
 
   app.use("/api/auth", authRouter);
+  app.use("/api/admin-users", adminUsersRouter);
+  app.use("/api/audit-logs", auditLogsRouter);
   app.use("/api/brands", brandsRouter);
   app.use("/api/categories", categoriesRouter);
   app.use("/api/inventory", inventoryRouter);
