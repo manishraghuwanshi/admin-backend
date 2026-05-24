@@ -21,12 +21,16 @@
   },
   "type": "module",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
+    "argon2": "^0.45.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^18.0.1",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
+    "jose": "^6.2.12",
     "postgres": "^3.4.9",
     "zod": "^4.6.5"
   },
