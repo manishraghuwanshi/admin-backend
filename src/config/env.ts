@@ -215,11 +215,18 @@ const AUTH_REFRESH_TOKEN_TTL_SECONDS = integer(
 const AUTH_COOKIE_SAMESITE =
   enumValue("AUTH_COOKIE_SAMESITE", COOKIE_SAMESITE_VALUES, IS_PRODUCTION ? "none" : "lax") ??
   "lax";
+const MAX_UPLOAD_BYTES = integer("MAX_UPLOAD_BYTES", 5 * 1024 * 1024, 1024, 20 * 1024 * 1024);
+const SIGNED_URL_TTL_SECONDS = integer("SIGNED_URL_TTL_SECONDS", 900, 60, 3600);
 // Signing secrets are mandatory in every environment. There is deliberately no
 // built-in fallback: a known static JWT secret would let anyone forge admin
 // tokens. Tests supply their own deterministic secrets in `src/tests/setup.ts`.
 const AUTH_ACCESS_TOKEN_SECRET = secret("AUTH_ACCESS_TOKEN_SECRET", true, 32);
 const AUTH_REFRESH_TOKEN_SECRET = secret("AUTH_REFRESH_TOKEN_SECRET", true, 32);
+const AWS_ENDPOINT_URL_S3 = optionalString("AWS_ENDPOINT_URL_S3");
+const AWS_REGION = optionalString("AWS_REGION") ?? "us-east-1";
+const AWS_ACCESS_KEY_ID = optionalString("AWS_ACCESS_KEY_ID");
+const AWS_SECRET_ACCESS_KEY = optionalString("AWS_SECRET_ACCESS_KEY");
+const STORAGE_BUCKET = optionalString("STORAGE_BUCKET") ?? "product-images";
 
 if (IS_PRODUCTION && CORS_ORIGINS.length === 0) {
   problems.push("CORS_ORIGINS: required in production (comma-separated list of allowed origins)");
@@ -256,6 +263,13 @@ export const env = Object.freeze({
   AUTH_COOKIE_SAMESITE: AUTH_COOKIE_SAMESITE as CookieSameSite,
   AUTH_COOKIE_NAME_ACCESS: optionalString("AUTH_COOKIE_NAME_ACCESS") ?? "admin_access_token",
   AUTH_COOKIE_NAME_REFRESH: optionalString("AUTH_COOKIE_NAME_REFRESH") ?? "admin_refresh_token",
+  AWS_ENDPOINT_URL_S3,
+  AWS_REGION,
+  AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY,
+  STORAGE_BUCKET,
+  MAX_UPLOAD_BYTES,
+  SIGNED_URL_TTL_SECONDS,
   /** Refresh sessions older than this are removed by the cleanup job. */
   SESSION_RETENTION_DAYS: integer("SESSION_RETENTION_DAYS", 30, 1, 365),
 });
