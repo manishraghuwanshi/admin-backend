@@ -14,6 +14,7 @@ import auditLogsRouter from "./modules/audit-logs/audit-logs.routes.js";
 import adminUsersRouter from "./modules/admin-users/admin-users.routes.js";
 import brandsRouter from "./modules/brands/brands.routes.js";
 import categoriesRouter from "./modules/categories/categories.routes.js";
+import imagesRouter from "./modules/product-images/product-images.routes.js";
 import inventoryRouter from "./modules/inventory/inventory.routes.js";
 import productsRouter from "./modules/products/products.routes.js";
 
@@ -58,6 +59,12 @@ export function createApp(): Express {
   app.use("/api/brands", brandsRouter);
   app.use("/api/categories", categoriesRouter);
   app.use("/api/inventory", inventoryRouter);
+
+  // Mounted before `/api/products` on purpose. Express matches a mount prefix by
+  // path segment, so `productsRouter` (which calls `requireAuth` at router level)
+  // would otherwise run first for every image request and pay for its own token
+  // verification before this router gets the chance to do the same.
+  app.use("/api/products/:productId/images", imagesRouter);
   app.use("/api/products", productsRouter);
 
   app.use(notFoundHandler);
