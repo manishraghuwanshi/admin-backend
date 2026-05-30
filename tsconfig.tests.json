@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "types": ["node"],
+
+    "strict": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+
+    "skipLibCheck": true
+  },
+  // `src/types` holds the ambient Express request augmentation. Test files pull
+  // in middleware/modules by import, but ambient global/module augmentation only
+  // applies when the declaration file is part of the program, so it has to be
+  // listed here explicitly alongside the main tsconfig include.
+  "include": ["vitest.config.ts", "src/types/**/*.ts", "src/tests/**/*.ts"]
+}
