@@ -7,7 +7,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit && tsc -p tsconfig.tools.json",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "bootstrap:owner": "tsx src/scripts/bootstrap-owner.ts",
+    "cleanup:sessions": "tsx src/scripts/cleanup-sessions.ts"
   },
   "keywords": [],
   "author": "",
