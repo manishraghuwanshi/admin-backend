@@ -10,6 +10,7 @@ import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import authRouter from "./modules/auth/auth.routes.js";
+import * as healthService from "./modules/health/health.service.js";
 import auditLogsRouter from "./modules/audit-logs/audit-logs.routes.js";
 import adminUsersRouter from "./modules/admin-users/admin-users.routes.js";
 import brandsRouter from "./modules/brands/brands.routes.js";
@@ -41,12 +42,19 @@ export function createApp(): Express {
   app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
 
   // Liveness: no I/O, so a database outage cannot make an orchestrator restart a
-  // process that would come back equally unable to serve.
+  // process that would come back equally unable to serve. See `/ready` for that.
   app.get("/health", (_req, res) => {
     res.json({
       success: true,
       message: "Admin backend is running",
     });
+  });
+
+  // Readiness: checks the dependencies that actually gate serving traffic. Mounted
+  // outside `/api` so it stays out of the CSRF guard and the audit surface, and is
+  // deliberately unauthenticated - it reports statuses, never data.
+  app.get("/ready", (req, res, next) => {
+    healthService.readinessHandler(req, res).catch(next);
   });
 
   // Cookie-authenticated endpoints: every state-changing request must carry a
