@@ -6,13 +6,14 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "type-check": "tsc --noEmit && tsc -p tsconfig.tools.json && tsc -p tsconfig.tests.json",
-    "db:check": "drizzle-kit check",
-    "bootstrap:owner": "tsx src/scripts/bootstrap-owner.ts",
-    "cleanup:sessions": "tsx src/scripts/cleanup-sessions.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.tools.json && tsc -p tsconfig.tests.json",
+    "lint": "eslint .",
+    "bootstrap:owner": "tsx src/scripts/bootstrap-owner.ts",
+    "cleanup:sessions": "tsx src/scripts/cleanup-sessions.ts",
+    "db:check": "drizzle-kit check"
   },
   "keywords": [],
   "author": "",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@eslint/js": "^9.39.5",
     "@neon/config": "^1.7.2",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
@@ -50,9 +52,12 @@
     "@types/supertest": "^7.2.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
     "supertest": "^7.2.2",
     "tsx": "^4.23.13",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^5.0.1"
   }
 }
