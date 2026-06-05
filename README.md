@@ -347,7 +347,230 @@ The suite runs on `NODE_ENV=test` with an in-memory PGlite database
 database, and never touches the real Object Storage bucket. `DATABASE_URL` in tests
 is an inert loopback URL that exists only to satisfy env validation.
 
+## Type Checking
+
+```bash
+pnpm type-check
+```
+
+`pnpm type-check` covers three configs: the app (`tsconfig.json`), the CLI scripts
+(`tsconfig.tools.json`), and the tests (`tsconfig.tests.json`).
+
+## Production Build
+
+```bash
+pnpm build
+```
+
+## Start Production Build
+
+```bash
+pnpm start
+```
+
+## Health Check
+
+With the development server running:
+
+```bash
+curl http://localhost:5000/health
+```
+
+Expected response:
+
+```json
+{
+  "success": true,
+  "message": "Admin backend is running"
+}
+```
+
+`/health` is liveness only: it performs no I/O and confirms the process is up, not
+that dependencies are reachable. Use `/ready` for that:
+
+```bash
+curl http://localhost:5000/ready
+```
+
+Ready response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "ready": true,
+    "database": "ok",
+    "storage": "not-configured"
+  }
+}
+```
+
+Not-ready response (`503`, database unreachable):
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Service is not ready",
+    "details": {
+      "ready": false,
+      "database": "unavailable",
+      "storage": "not-configured"
+    }
+  },
+  "requestId": "..."
+}
+```
+
+`database` and `storage` are each `ok`, `unavailable`, or `not-configured`. A storage
+outage reports `unavailable` but does not make the instance not-ready, because the
+catalog and authentication paths do not need a bucket. `branch` appears only when
+`NEON_BRANCH` is set.
+
+## Database
+
+The current database uses Neon PostgreSQL and Drizzle ORM.
+
+Current migrations are already applied. Do not modify or rewrite existing migration files.
+
+Generate a new migration only when an approved schema change is genuinely required:
+
+```bash
+pnpm exec drizzle-kit generate
+```
+
+Review the generated SQL before applying it.
+
+Apply migrations only after the generated SQL has been reviewed:
+
+```bash
+pnpm exec drizzle-kit migrate
+```
+
+Never reset, recreate, truncate, or destructively modify the database.
+
+## Current Database Scope
+
+The current administrative backend covers:
+
+* `admin_users`
+* `refresh_sessions`
+* `audit_logs`
+* `brands`
+* `categories`
+* `products`
+* `product_categories`
+* `watch_details`
+* `product_images`
+* `inventory`
+
+Customer-commerce entities remain deferred.
+
+Do not implement customer-facing schemas or routes in this backend until the requirements for `customer-store` are finalized.
+
+## Object Storage
+
+Product images use Neon Object Storage.
+
+Current bucket:
+
+```text
+product-images
+```
+
+The bucket is private.
+
+The database stores storage keys rather than image binaries.
+
+The backend supports upload, deletion, and signed download URLs for stored objects.
+Objects are written under the server-generated `products/` key namespace, and uploads
+are validated (base64 decoding, size ceiling, magic-byte content detection) before
+anything reaches the bucket. Before any delete, the key stored in the database is
+re-validated against the full expected format, so a corrupted or hand-edited row cannot
+point a delete at an arbitrary object in the shared bucket.
+
+Uploading an image is a JSON body carrying base64 data, so the body must survive
+`JSON_BODY_LIMIT` *and* the decoded image must fit `MAX_UPLOAD_BYTES`. See
+[Upload size limits](#upload-size-limits) for how to configure the two together.
+
+Storage credentials must remain environment-only.
+
+Do not change bucket permissions or delete storage objects without explicit approval.
+
+## Upload Size Limits
+
+Two independent limits gate an image upload, and they must be configured together:
+
+| Variable           | Default | Applies to                                     |
+| ------------------ | ------- | ---------------------------------------------- |
+| `JSON_BODY_LIMIT`  | `100kb` | the raw HTTP body, rejected with `413`         |
+| `MAX_UPLOAD_BYTES` | `5 MiB` | the image after base64 decoding, `413`         |
+
+Base64 inflates bytes by roughly 4/3, so a body of size `B` carries at most about
+`B * 3 / 4` of image. With the defaults, `JSON_BODY_LIMIT` caps uploads at roughly
+75 KiB **before** `MAX_UPLOAD_BYTES` ever gets a chance to apply: a larger body is
+rejected by Express with `413 PAYLOAD_TOO_LARGE`, not by the image validator.
+
+`MAX_UPLOAD_BYTES` has exactly one consumer today — this JSON upload path — so the
+default configuration silently narrows it to 75 KiB. Raising it alone does nothing.
+The limit is not reconciled at startup on purpose: adding a boot-time check would
+break every existing deployment whose `JSON_BODY_LIMIT` is left at the default.
+
+To accept a 5 MiB image through the JSON endpoint, set both:
+
+```env
+JSON_BODY_LIMIT=7mb
+MAX_UPLOAD_BYTES=5242880
+```
+
+`7mb` is the smallest convenient setting that clears a 5 MiB image's base64 form
+(about 6.67 MiB), which is what `decodeImagePayload` then enforces itself.
+
+The order in which a too-large or malformed upload is rejected is:
+`JSON_BODY_LIMIT` (Express, `413`) → Zod string maximum (`400`) → base64 length
+ceiling (`413`) → decoded byte count (`413`) → magic-byte content check (`415`).
+
+A reverse proxy in front of this API may impose its own, smaller body limit; check it
+if uploads fail with `413` before suspecting these two.
+
+## Security Rules
+
+* Never commit `.env`.
+* Never expose secrets.
+* Never hardcode credentials.
+* Validate external input.
+* Enforce authorization on the backend.
+* Do not trust client-supplied roles or permissions.
+* Do not log passwords, tokens, API keys, or connection strings.
+* Keep the Object Storage bucket private.
+* Validate uploaded files before implementing upload functionality.
+* Do not expose private storage objects directly.
+* Review database migrations before applying them.
+
+## Project Documentation
+
+* `README.md` — project overview and operational instructions
+* `AGENTS.md` — instructions for AI coding agents
+* `docs/architecture.md` — backend architecture
+* `docs/database.md` — database schema and migration rules
+* `docs/admin-permissions.md` — administrative roles and permission rules
+
 ## Project Status
 
-Product catalog, inventory, and product-image administration are implemented.
-Automated integration tests and the operational scripts are the next step.
+The backend foundation, database, authentication, authorization, audit logging,
+catalog CRUD, inventory API, product-image API with Object Storage writes,
+administrator management, audit-log querying, liveness/readiness probes, and the
+operational scripts (`bootstrap:owner`, `cleanup:sessions`) are implemented.
+
+282 automated integration tests across 18 files cover the authentication lifecycle,
+RBAC, CSRF, error handling, inventory concurrency, image upload and compensation,
+product-delete object cleanup, audit-log scoping, readiness, the operational CLI
+scripts, and administrator management including the self-lockout and last-active-owner
+invariants. Run them with `pnpm test`.
+
+Runtime verification so far is automated-test based, against in-memory PGlite rather
+than Neon. Production-shaped behaviour (real Neon, real Object Storage bucket, real
+browser cookie flow) still needs a manual pass.
+
+This project is under active development for learning and portfolio purposes.
