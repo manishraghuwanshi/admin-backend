@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { z } from "zod";
 
@@ -6,6 +6,11 @@ import { db } from "../../db/index.js";
 import { adminUsers, refreshSessions } from "../../db/schema.js";
 import { recordAudit } from "../../lib/audit.js";
 import { clearAuthCookies, setAuthCookies } from "../../lib/auth/cookies.js";
+import {
+  evaluateLoginThrottle,
+  LOGIN_LOCKOUT_MS,
+  LOGIN_MAX_FAILED_ATTEMPTS,
+} from "../../lib/auth/login-throttle.js";
 import { verifyPassword } from "../../lib/auth/password.js";
 import {
   generateRefreshToken,
@@ -15,7 +20,7 @@ import {
 } from "../../lib/auth/tokens.js";
 import { permissionsFor } from "../../lib/auth/permissions.js";
 import { env } from "../../config/env.js";
-import { unauthorized } from "../../utils/errors.js";
+import { tooManyRequests, unauthorized } from "../../utils/errors.js";
 
 export const loginBodySchema = z.object({
   email: z.string().trim().email().max(255),
@@ -23,6 +28,41 @@ export const loginBodySchema = z.object({
 });
 
 const GENERIC_AUTH_FAILURE = "Invalid email or password";
+
+/**
+ * The client-facing message for both bot controls. Deliberately identical and
+ * non-enumerating, so it cannot be used to tell a locked account from a
+ * merely rate-limited one - or from one that does not exist at all.
+ */
+const GENERIC_THROTTLE_MESSAGE = "Too many login attempts. Try again later.";
+
+/**
+ * Refuse a throttled attempt.
+ *
+ * Audits before throwing because the response deliberately carries no
+ * account-specific detail, so the audit row is the only durable record of which
+ * account was targeted and why. The `Retry-After` header is what lets a frontend
+ * wait exactly as long as needed instead of guessing.
+ */
+async function rejectThrottledLogin(
+  res: Response,
+  req: Request,
+  decision: { reason: "locked" | "rate_limited"; retryAfterSeconds: number },
+  adminUserId: string,
+): Promise<never> {
+  res.set("Retry-After", String(decision.retryAfterSeconds));
+
+  await recordAudit({
+    actorId: adminUserId,
+    action: "auth.login_failed",
+    entityType: "admin_user",
+    entityId: adminUserId,
+    metadata: { reason: decision.reason, retryAfterSeconds: decision.retryAfterSeconds },
+    req,
+  });
+
+  throw tooManyRequests(GENERIC_THROTTLE_MESSAGE);
+}
 
 function publicAdmin(user: {
   id: string;
@@ -98,23 +138,67 @@ export async function login(req: Request, res: Response): Promise<void> {
     throw unauthorized(GENERIC_AUTH_FAILURE);
   }
 
+  // Throttle before verifying the password: a locked or too-soon attempt must not
+  // pay for an Argon2 hash, and the check must not depend on the password being
+  // correct. Inactive and unknown accounts have no stored state to consult, so
+  // they pass through and fail on the same generic message as before.
+  const throttle = evaluateLoginThrottle({
+    failedLoginAttempts: user.failedLoginAttempts,
+    lastFailedLoginAt: user.lastFailedLoginAt,
+    lockedUntil: user.lockedUntil,
+  });
+
+  if (!throttle.allowed) {
+    await rejectThrottledLogin(res, req, throttle, user.id);
+  }
+
   const valid = await verifyPassword(user.passwordHash, password);
 
   if (!valid) {
+    // One statement, no read-then-write: the new counter and lock deadline are
+    // computed by PostgreSQL from the stored row, so two simultaneous failures
+    // both register instead of overwriting each other with a stale value. Nothing
+    // here is derived from the password, so the statement needs no parameters.
+    const reachedThreshold = sql`${adminUsers.failedLoginAttempts} + 1 >= ${LOGIN_MAX_FAILED_ATTEMPTS}`;
+
+    const [failed] = await db
+      .update(adminUsers)
+      .set({
+        failedLoginAttempts: sql`case when ${reachedThreshold} then 0 else ${adminUsers.failedLoginAttempts} + 1 end`,
+        lastFailedLoginAt: new Date(),
+        lockedUntil: sql`case when ${reachedThreshold} then now() + interval '${sql.raw(String(LOGIN_LOCKOUT_MS))} milliseconds' else ${adminUsers.lockedUntil} end`,
+        updatedAt: new Date(),
+      })
+      .where(eq(adminUsers.id, user.id))
+      .returning({ failedLoginAttempts: adminUsers.failedLoginAttempts });
+
     await recordAudit({
       actorId: user.id,
       action: "auth.login_failed",
       entityType: "admin_user",
       entityId: user.id,
-      metadata: { reason: "bad_password" },
+      metadata: {
+        reason: "bad_password",
+        // 0 here means this failure tripped the lock, since the counter restarts at
+        // one only on the next failure after the lockout expires.
+        failedLoginAttempts: failed?.failedLoginAttempts ?? 0,
+      },
       req,
     });
     throw unauthorized(GENERIC_AUTH_FAILURE);
   }
 
+  // A correct password clears the throttle state in the same statement that stamps
+  // `lastLoginAt`, so a successful login never leaves a "one more failure locks it"
+  // counter behind.
   const [updated] = await db
     .update(adminUsers)
-    .set({ lastLoginAt: new Date(), updatedAt: new Date() })
+    .set({
+      lastLoginAt: new Date(),
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      updatedAt: new Date(),
+    })
     .where(eq(adminUsers.id, user.id))
     .returning();
 

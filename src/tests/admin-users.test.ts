@@ -700,6 +700,26 @@ describe("admin users: passwords and sessions", () => {
       ).status,
     ).toBe(401);
 
+    // An immediate retry with the working password is now intentionally refused:
+    // the failed attempt above started the per-account 5-second interval. Reusing
+    // the initial password here would assert against that throttle, not against the
+    // password change, so the check is made with the old password again and the
+    // throttle is waited out before the new password is used.
+    expect(
+      Number(
+        (
+          await stale
+            .post("/api/auth/login")
+            .send({ email: target.email, password: DEFAULT_ADMIN_PASSWORD })
+        ).headers["retry-after"],
+      ),
+    ).toBeGreaterThan(0);
+
+    await db
+      .update(adminUsers)
+      .set({ lastFailedLoginAt: new Date(Date.now() - 60_000) })
+      .where(eq(adminUsers.id, target.id));
+
     const rotated = createAgent();
 
     await login(rotated, { email: target.email, password: STRONG_PASSWORD });

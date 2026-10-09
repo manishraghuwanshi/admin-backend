@@ -162,7 +162,7 @@ src/
 ├── db/              # index.ts, schema.ts
 ├── lib/
 │   ├── audit.ts
-│   ├── auth/        # cookies.ts, password.ts, permissions.ts, tokens.ts
+│   ├── auth/        # cookies.ts, login-throttle.ts, password.ts, permissions.ts, tokens.ts
 │   └── storage/     # keys.ts, s3.ts
 ├── middleware/       # auth, authorize, csrf, error-handler, rate-limit, validate, ...
 ├── modules/
@@ -250,6 +250,14 @@ what. See `docs/admin-permissions.md` for the enforcement status of each permiss
 Authorization guards on top of the permission check exist where a permission alone is
 not enough to make a mutation safe: the self-lockout and last-active-owner rules in
 administrator management, and the reservation-fits-quantity rule in inventory.
+
+Login throttling sits alongside authentication rather than in the permission model: it
+is not an authorization decision, so it is not a permission. `POST /api/auth/login`
+checks a per-account failure interval and temporary lockout
+(`src/lib/auth/login-throttle.ts`, state persisted on `admin_users`) **before**
+verifying the password, so a throttled attempt never reaches Argon2 and a correct
+password cannot be used to probe whether an account is locked. The per-client
+`authRateLimiter` continues to apply on top.
 
 The frontend may hide unavailable actions for usability, but the backend must always perform the final authorization check.
 
