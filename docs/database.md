@@ -269,11 +269,19 @@ Important fields include:
 - `role` (`owner`, `manager`, `editor`)
 - `is_active`
 - `last_login_at`
+- `failed_login_attempts` (consecutive failed verifications; 0 after a success or a lock)
+- `last_failed_login_at` (drives the minimum interval between attempts)
+- `locked_until` (temporary lockout deadline after repeated failures)
 - `created_at`
 - `updated_at`
 
 Roles are enforced server-side through the permission map in
 `src/lib/auth/permissions.ts`. Client-supplied role information is never trusted.
+
+The last three columns hold per-account login throttling state. `failed_login_attempts`
+has a `CHECK` constraint that keeps it non-negative, and the counter is only ever
+written inside a single `UPDATE ... RETURNING` statement, so concurrent failures
+cannot lose an increment.
 
 ---
 
@@ -314,7 +322,10 @@ Important fields include:
 - `created_at`
 
 Failed logins are recorded with `action = auth.login_failed` and a non-enumerating
-reason such as `unknown_user`.
+reason such as `unknown_user`. Throttled attempts reuse the same action with
+`reason = rate_limited` (inside the 5-second interval) or `reason = locked`
+(an active temporary lockout), and the bad-password reason carries the resulting
+`failedLoginAttempts` counter.
 
 ---
 

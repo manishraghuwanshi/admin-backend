@@ -122,6 +122,8 @@ the real endpoints, and asserts the role/permission outcomes.
 * Backend authorization
 * CSRF origin checks
 * Rate limiting for authentication endpoints
+* Per-account login throttling: 5-second minimum between failed attempts, 15-minute
+  lockout after 5 consecutive failures
 * Secret redaction in logs
 * Production error sanitization
 * Secure authentication cookies
@@ -150,6 +152,21 @@ POST /api/auth/refresh
 POST /api/auth/logout
 GET  /api/auth/me
 ```
+
+Login is throttled per administrator account, on top of the per-client
+`authRateLimiter`:
+
+* at least 5 seconds must pass between two failed attempts for the same account;
+* 5 consecutive failed attempts lock the account for 15 minutes.
+
+Both refusals answer `429` with a generic message and a `Retry-After` header, and are
+checked **before** the password is verified, so a throttled request never pays for an
+Argon2 hash — nor can a correct password be used to probe whether an account is
+locked. The state (`failed_login_attempts`, `last_failed_login_at`, `locked_until`)
+lives on `admin_users`, so it survives a restart and is shared across instances, and
+it is cleared by any successful login. Refused attempts are audited as
+`auth.login_failed` with `reason = rate_limited` or `reason = locked`. Unknown and
+deactivated accounts carry no throttle state and keep their existing generic `401`.
 
 ### Administrator management
 
@@ -563,11 +580,11 @@ catalog CRUD, inventory API, product-image API with Object Storage writes,
 administrator management, audit-log querying, liveness/readiness probes, and the
 operational scripts (`bootstrap:owner`, `cleanup:sessions`) are implemented.
 
-282 automated integration tests across 18 files cover the authentication lifecycle,
-RBAC, CSRF, error handling, inventory concurrency, image upload and compensation,
-product-delete object cleanup, audit-log scoping, readiness, the operational CLI
-scripts, and administrator management including the self-lockout and last-active-owner
-invariants. Run them with `pnpm test`.
+296 automated integration tests across 19 files cover the authentication lifecycle,
+per-account login throttling and lockout, RBAC, CSRF, error handling, inventory
+concurrency, image upload and compensation, product-delete object cleanup, audit-log
+scoping, readiness, the operational CLI scripts, and administrator management including
+the self-lockout and last-active-owner invariants. Run them with `pnpm test`.
 
 Runtime verification so far is automated-test based, against in-memory PGlite rather
 than Neon. Production-shaped behaviour (real Neon, real Object Storage bucket, real

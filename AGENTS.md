@@ -54,7 +54,7 @@ admin-backend/
 │   ├── db/                # index.ts, schema.ts, test-connection.ts
 │   ├── lib/
 │   │   ├── audit.ts
-│   │   ├── auth/           # cookies.ts, password.ts, permissions.ts, tokens.ts
+│   │   ├── auth/           # cookies.ts, login-throttle.ts, password.ts, permissions.ts, tokens.ts
 │   │   ├── inventory-lock.ts
 │   │   └── storage/        # keys.ts, s3.ts, delete.ts
 │   ├── middleware/         # auth, authorize, csrf, error-handler, not-found,
@@ -135,6 +135,8 @@ Do not introduce additional architectural layers unless a concrete requirement j
 * `/api/auth/logout`
 * CSRF origin protection
 * Authentication rate limiting
+* Per-account login throttling: a 5-second minimum between failed attempts and a
+  15-minute lockout after 5 consecutive failures, both persisted on `admin_users`
 * Authentication failure audit events
 
 #### Authorization
@@ -244,10 +246,10 @@ Both keep their logic in an exported function behind an `isDirectExecution` guar
 * In-memory PGlite database with the real schema applied (`src/tests/helpers/db.ts`)
 * Throwaway auth secrets and an inert `DATABASE_URL` per run, so tests need no `.env`
   and cannot reach the real database or bucket
-* 282 tests across 18 files covering auth lifecycle, RBAC, CSRF, error handling,
-  inventory concurrency, image upload and compensation, product-delete object cleanup,
-  audit scoping, administrator-management invariants, readiness, and the operational
-  CLI scripts
+* 296 tests across 19 files covering auth lifecycle, per-account login throttling and
+  lockout, RBAC, CSRF, error handling, inventory concurrency, image upload and
+  compensation, product-delete object cleanup, audit scoping, administrator-management
+  invariants, readiness, and the operational CLI scripts
 
 ---
 
@@ -305,7 +307,7 @@ a code defect, and it is deliberately not reconciled at startup.
 
 ### Testing
 
-Automated integration tests exist: 282 tests across 18 files in `src/tests/`, run with
+Automated integration tests exist: 296 tests across 19 files in `src/tests/`, run with
 `pnpm test`. They need no `.env` and cannot reach the real database or bucket.
 
 Gaps in coverage rather than absence of a suite:
@@ -566,7 +568,7 @@ Do not silently introduce a third response convention.
 
 ## 14. Implementation Order
 
-Phases 0 through 5 are complete and verified by `pnpm test` (282 tests, 18 files):
+Phases 0 through 6 are complete and verified by `pnpm test` (296 tests, 19 files):
 
 * Phase 0 — authenticated logout fixed, `.env.example` completed, README / agent /
   permission documentation synchronized.
@@ -600,6 +602,25 @@ Still open:
 * Remaining contract cleanup.
 
 Do not start customer-commerce implementation in this backend.
+
+### Phase 6 — login throttling
+
+Complete:
+
+* Per-account login throttling persisted on `admin_users`
+  (`failed_login_attempts`, `last_failed_login_at`, `locked_until`), living in
+  `src/lib/auth/login-throttle.ts`: a 5-second minimum between failed attempts and a
+  15-minute lockout after 5 consecutive failures.
+* Both refusals answer `429` with a generic message and `Retry-After`, and are checked
+  before password verification, so a throttled attempt pays for no Argon2 hash and a
+  correct password cannot be used to probe lock state.
+* Concurrency-safe counter updates, using the same single-statement
+  `UPDATE ... RETURNING` idiom as inventory rather than a read-then-write.
+* Successful login clears the throttle state in the same update that stamps
+  `lastLoginAt`; unknown and deactivated accounts keep their existing generic `401`
+  and hold no throttle state.
+* Test coverage in `src/tests/auth-login-throttle.test.ts` (integration + pure
+  decision logic), plus the migration and documentation updates.
 
 ---
 
