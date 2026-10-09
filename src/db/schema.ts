@@ -461,6 +461,28 @@ export const adminUsers = pgTable(
       withTimezone: true,
     }),
 
+    /**
+     * Consecutive failed password verifications since the last successful login.
+     * Reset to 0 on success and when the lockout threshold is crossed.
+     */
+    failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+
+    /**
+     * When the most recent failed verification happened. Drives the short
+     * minimum interval between attempts; null until the first failure.
+     */
+    lastFailedLoginAt: timestamp("last_failed_login_at", {
+      withTimezone: true,
+    }),
+
+    /**
+     * Set when `failedLoginAttempts` crosses the lockout threshold. Login is
+     * refused while this is in the future; it is cleared on the next success.
+     */
+    lockedUntil: timestamp("locked_until", {
+      withTimezone: true,
+    }),
+
     createdAt: timestamp("created_at", {
       withTimezone: true,
     })
@@ -476,6 +498,10 @@ export const adminUsers = pgTable(
   (table) => [
     index("admin_users_role_idx").on(table.role),
     index("admin_users_is_active_idx").on(table.isActive),
+    check(
+      "admin_users_failed_login_attempts_non_negative_check",
+      sql`${table.failedLoginAttempts} >= 0`,
+    ),
   ],
 );
 
